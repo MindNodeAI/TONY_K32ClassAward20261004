@@ -376,7 +376,7 @@
                     <div class="bg-white p-5 border-x border-b border-slate-200 shadow-sm flex flex-col gap-4 relative z-20">
                         <div class="flex items-center space-x-3 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 w-full">
                             <svg class="w-5 h-5 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4v-4l5.659-5.659C9.16 10.229 9 9.141 9 8a6 6 0 016-6z"></path></svg>
-                            <input type="password" id="gemini-api-key" placeholder="輸入 Gemini API Key (呼叫 gemini-3.8-flash 產生真實 AI 分析報告)" class="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500 transition-colors">
+                            <input type="password" id="gemini-api-key" placeholder="輸入 Gemini API Key (呼叫 gemini-4-hydrogen 產生真實 AI 分析報告)" class="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500 transition-colors">
                             <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-xs text-indigo-600 font-bold hover:underline whitespace-nowrap">取得 API Key</a>
                         </div>
                         <div class="flex flex-wrap items-center justify-between gap-4 w-full">
@@ -953,6 +953,13 @@
                     n.classList.add('nav-active'); n.classList.remove('nav-inactive'); 
                 }
             });
+            
+            // 行動裝置切換面板後自動收合側邊欄
+            if(window.innerWidth < 768 && sidebar && sidebarBackdrop) {
+                sidebar.classList.add('-translate-x-full');
+                sidebarBackdrop.classList.add('hide');
+            }
+
             const titles = {
                 'panel-dashboard': '儀表板', 'panel-new-course': '建立課程', 'panel-roster': '名單管理',
                 'panel-award': '課堂發點', 'panel-redemption': '兌換管理', 'panel-settlement': '學期結算',
@@ -1149,7 +1156,7 @@
             let aiContent = "";
             
             if (apiKey) {
-                showToast('正在呼叫 gemini-3.8-flash 模型分析真實數據...');
+                showToast('正在呼叫 gemini-4-hydrogen 模型分析真實數據...');
                 try {
                     // 計算要提供給 AI 的真實數據
                     let totalPts = 0; Object.values(walletsMap).forEach(w => totalPts += (w.earnedNet||0));
@@ -1163,7 +1170,7 @@
 請提供：1. 活躍度摘要 2. AI 智慧預測與教學建議。
 注意：請直接輸出 HTML 格式內容 (僅需 <h2>, <p>, <ul> 等標籤)，不需要 Markdown 標記，也不要包含 <html> 或 <body>。`;
 
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-4-hydrogen:generateContent?key=${apiKey}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
@@ -1186,7 +1193,7 @@
             }
 
             const sourceHTML = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>AI 分析報告</title></head><body style='font-family: Arial, sans-serif;'>" + 
-                `<h1 style="color:#4f46e5;text-align:center;">ClassAward AI 分析報告</h1><p style="text-align:center; color: #64748b;">統計期間：${start} 至 ${end}</p><hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">${aiContent}<br><p style="text-align:right;color:#94a3b8;font-size:12px;">-- 本報告由 ClassAward (gemini-3.8-flash) 自動產出 --</p>` + "</body></html>";
+                `<h1 style="color:#4f46e5;text-align:center;">ClassAward AI 分析報告</h1><p style="text-align:center; color: #64748b;">統計期間：${start} 至 ${end}</p><hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">${aiContent}<br><p style="text-align:right;color:#94a3b8;font-size:12px;">-- 本報告由 ClassAward (gemini-4-hydrogen) 自動產出 --</p>` + "</body></html>";
             
             const link = document.createElement("a"); 
             link.href = URL.createObjectURL(new Blob(['\ufeff', sourceHTML], { type: 'application/msword' })); 
@@ -1880,32 +1887,58 @@
             if(!courseData.batchMatchConfig) return showToast('請先到「課程設定」完成線上名單比對設定', true);
             
             try {
-                const data = await file.arrayBuffer();
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                // 【終極無腦暴力比對法】：將整個檔案轉成「一個超級大字串」，完全無視任何換行、逗號、欄位、特殊符號！
+                let giantString = "";
                 
-                let onlineIds = new Set();
-                json.forEach(row => {
-                    row.forEach(cell => {
-                        const val = String(cell).trim();
-                        if (val) onlineIds.add(val.toLowerCase());
-                    });
-                });
+                try {
+                    const data = await file.arrayBuffer();
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    // 轉成純文字字串
+                    giantString = XLSX.utils.sheet_to_csv(sheet);
+                } catch(err) {
+                    // 若 XLSX 解析失敗，直接當作純文字讀取 (防呆)
+                    giantString = await file.text();
+                }
+                
+                // 終極淨化：拔除所有你看得到跟看不到的干擾符號 (包含換行、引號、逗號等)
+                giantString = giantString.replace(/[\s\uFEFF\xA0\-\_\,\.\"\'\r\n]+/g, '').toLowerCase();
+                
+                if (giantString.length === 0) throw new Error("檔案內容為空或無法解析");
 
                 const cfg = courseData.batchMatchConfig;
                 let targetStudents = [];
+                let matchedCount = 0; // 紀錄真正有比對到的人數
                 
                 studentsList.forEach(stu => {
-                    const isOnline = onlineIds.has(stu.studentNo.toLowerCase()) || onlineIds.has(stu.name.toLowerCase());
+                    const sno = String(stu.studentNo || '').replace(/[\s\-\_]+/g, '').toLowerCase();
+                    const sname = String(stu.name || '').replace(/[\s\uFEFF\xA0]+/g, '').toLowerCase();
+                    const nameEnParts = String(stu.nameEn || '').toLowerCase().split(/[\s\-\_]+/).filter(p => p.length > 1);
+
+                    let isOnline = false;
+                    
+                    // 只要這個學生的學號或名字「有出現在超級大字串」的任何一個角落，就是有來！
+                    // 學號最準，因為學號不會有中文亂碼問題
+                    if (sno && sno.length >= 4 && giantString.includes(sno)) {
+                        isOnline = true;
+                    } else if (sname && sname.length > 1 && giantString.includes(sname)) {
+                        isOnline = true;
+                    } else if (nameEnParts.length > 0 && nameEnParts.every(part => giantString.includes(part))) {
+                        isOnline = true;
+                    }
+
+                    if (isOnline) {
+                        matchedCount++;
+                    }
+
                     if (cfg.target === 'matched' && isOnline) targetStudents.push(stu.id);
                     if (cfg.target === 'unmatched' && !isOnline) targetStudents.push(stu.id);
                 });
                 
                 if (targetStudents.length === 0) {
-                    showToast('沒有符合比對條件的學生');
+                    showToast(`比對完成！系統偵測到 ${matchedCount} 人在線上。但沒有符合「${cfg.target === 'matched' ? '有' : '未'}在名單內」的對象。`, false, true);
                 } else {
-                    showModal('確認批次操作', `比對結果：共有 ${targetStudents.length} 位學生符合條件。<br>將發放 ${cfg.points} 點，事由：「${cfg.reason}」`, () => {
+                    showModal('確認批次操作', `比對結果分析：<br>👉 系統成功辨識 <b>${matchedCount}</b> 位學生在線上。<br>👉 符合「${cfg.target === 'matched' ? '有' : '未'}在線上」條件的共有 <b class="text-indigo-600 text-lg">${targetStudents.length}</b> 人。<br><br>將發放 ${cfg.points} 點，事由：「${cfg.reason}」`, () => {
                         selectedStudents = new Set(targetStudents);
                         renderAwardGrid();
                         D('award-selected-count').innerText = selectedStudents.size;
